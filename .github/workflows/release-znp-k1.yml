@@ -1,0 +1,87 @@
+name: Armbian Compile and Release
+on:
+  push:
+    tags:
+      - "*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: "Build ${{ matrix.variant }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # One image per printer family / board revision; see ZNP-K1.md.
+        variant: [n4, n4plus, n4-v1.4, n4plus-v2.3]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # run.sh holds the release build flags, so CI and local builds match.
+      - name: Compile
+        run: ./run.sh ${{ matrix.variant }}
+
+      # Armbian names images after the board only, so tag each with its variant.
+      - name: Name image after variant
+        run: |
+          shopt -s nullglob
+          images=(output/images/*.img.xz)
+          [[ ${#images[@]} -eq 1 ]] || { echo "expected one image, got: ${images[*]}"; exit 1; }
+          base="${images[0]%.img.xz}"
+          mkdir dist
+          mv "${base}.img.xz" "dist/$(basename "${base}")-${{ matrix.variant }}.img.xz"
+          [[ -f "${base}.img.txt" ]] && mv "${base}.img.txt" "dist/$(basename "${base}")-${{ matrix.variant }}.img.txt"
+          ls -l dist
+
+      - name: Upload image
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-${{ matrix.variant }}
+          path: dist/*
+          compression-level: 0 # already xz
+          if-no-files-found: error
+
+  release:
+    name: "Release"
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download images
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: image-*
+          path: dist
+          merge-multiple: true
+
+      - name: Release
+        uses: ncipollo/release-action@v1
+        with:
+          prerelease: true
+          allowUpdates: true
+          name: ${{ github.ref_name }}
+          artifacts: dist/*
+          body: |
+            OpenNept4une base images, compiled by GitHub Actions. Pick the image for your printer and board:
+
+            | Image suffix | Printer | Board | Toolhead |
+            |---|---|---|---|
+            | `-n4` | Neptune 4 / 4 Pro | ZNP-K1 V1.x | standard |
+            | `-n4plus` | Neptune 4 Plus / Max | ZNP-K1 V2.0 | standard |
+            | `-n4-v1.4` | Neptune 4 / 4 Pro | ZNP-K1 V1.4 | USB-C |
+            | `-n4plus-v2.3` | Neptune 4 Plus / Max | ZNP-K1 V2.3 | USB-C |
+
+            Every image contains all ZNP-K1 DTBs; the one that boots is set by `fdtfile=` in `/boot/armbianEnv.txt`.
+
+            Mind that these images are empty and should be used as a base for further customization.
+
+            For more details, please see the logs [here](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).

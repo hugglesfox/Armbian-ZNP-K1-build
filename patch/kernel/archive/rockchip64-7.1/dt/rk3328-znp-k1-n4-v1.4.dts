@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Elegoo ZNP-K1 V1.4 printer controller, Neptune 4 / 4 Pro with the USB-C
+ * toolhead (CDC-ACM Klipper MCU on the toolhead board).
+ *
+ * The OpenNept4une Neptune4+Pro USB-C image boots this board description.
+ * Tested on hardware by Mike Knights (mcknight89).
+ */
+
+#include "rk3328-znp-k1-v1x.dts"
+
+/ {
+	model = "Elegoo ZNP-K1 V1.4";
+};
+
+/*
+ * GPIO2_C2 (SoC GPIO 82) switches toolhead power. It is deliberately not
+ * hogged: OpenNept4une drives it from userspace and power-cycles it to put
+ * the toolhead into its bootloader for flashing.
+ */
+&gpio2 {
+	gpio-line-names =
+		/* A0-A7 */ "", "", "", "", "", "", "", "",
+		/* B0-B7 */ "", "", "", "", "", "", "", "",
+		/* C0-C2 */ "", "", "toolhead-power";
+};
+
+/*
+ * PMIC interrupt is GPIO2_A6, as its pmic-int-l pinctrl says (and as
+ * rk3328-mkspi.dts already has); stated here so this board doesn't depend on
+ * the base tree for it.
+ */
+&rk805 {
+	interrupt-parent = <&gpio2>;
+	interrupts = <RK_PA6 IRQ_TYPE_LEVEL_LOW>;
+};
